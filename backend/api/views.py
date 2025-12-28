@@ -1,24 +1,26 @@
-from rest_framework import viewsets, status, filters
+from rest_framework import viewsets, status, filters, permissions
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.db.models import Q
-from datetime import timedelta
+from django.db.models import Q, Count, Sum
+from datetime import datetime, timedelta
 from decimal import Decimal
 import math
 
 from .models import (
-    User, Vehicle, LoanApplication, Document, 
-    EMISchedule, Payment
+    User, Vehicle, LoanApplication, Document, EMISchedule, 
+    Payment, Notification, ChatMessage, KYCProfile, KYCDocument
 )
 from .serializers import (
     UserSerializer, VehicleSerializer, LoanApplicationSerializer,
     DocumentSerializer, EMIScheduleSerializer, PaymentSerializer,
-    NotificationSerializer
+    NotificationSerializer, ChatMessageSerializer,
+    KYCProfileSerializer, KYCDocumentSerializer
 )
 from ai_engine.credit_scorer import CreditScorer
 from ai_engine.fraud_detector import FraudDetector
@@ -41,7 +43,10 @@ def register(request):
             'refresh': str(refresh),
             'access': str(refresh.access_token),
         }, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    return Response({
+        'error': 'Registration failed. Please correct the errors below.',
+        'details': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['POST'])
@@ -58,7 +63,10 @@ def login(request):
             'refresh': str(refresh),
             'access': str(refresh.access_token),
         })
-    return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+    return Response({
+        'error': 'Login failed',
+        'detail': 'Invalid username or password. Please try again.'
+    }, status=status.HTTP_401_UNAUTHORIZED)
 
 
 @api_view(['GET'])
@@ -75,7 +83,10 @@ def update_profile(request):
     if serializer.is_valid():
         serializer.save()
         return Response(serializer.data)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    return Response({
+        'error': 'Profile update failed. Please correct the errors below.',
+        'details': serializer.errors
+    }, status=status.HTTP_400_BAD_REQUEST)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -165,6 +176,16 @@ class LoanApplicationViewSet(viewsets.ModelViewSet):
         return LoanApplication.objects.none()
     
     def perform_create(self, serializer):
+        # Check KYC status before allowing loan application
+        user = self.request.user
+        if user.user_type == 'customer' and user.kyc_status != 'verified':
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({
+                'error': 'KYC verification required',
+                'message': 'You must complete and verify your KYC before applying for a loan',
+                'kyc_status': user.kyc_status
+            })
+        
         # Create loan as draft - user must upload documents before submission
         loan = serializer.save(customer=self.request.user, status='draft')
         self.calculate_emi(loan)
@@ -552,7 +573,7 @@ def dashboard_stats(request):
                 emi_schedule__application__customer=user
             ).count(),
         }
-    elif user.user_type == 'admin':
+    elif user.user_type in ['admin', 'sales_rep']:
         stats = {
             'total_applications': LoanApplication.objects.count(),
             'pending_verifications': LoanApplication.objects.filter(status='submitted').count(),
@@ -560,6 +581,19 @@ def dashboard_stats(request):
                 approved_at__date=timezone.now().date()
             ).count(),
             'total_customers': User.objects.filter(user_type='customer').count(),
+            'users_with_loans': LoanApplication.objects.values('customer').distinct().count(),
+            'total_kyc': KYCProfile.objects.count(),
+            'kyc_pending': KYCProfile.objects.filter(status='pending').count(),
+            'kyc_breakdown': {
+                'verified': User.objects.filter(user_type='customer', kyc_status='verified').count(),
+                'pending': User.objects.filter(user_type='customer', kyc_status='pending').count(),
+                'rejected': User.objects.filter(user_type='customer', kyc_status='rejected').count(),
+                'incomplete': User.objects.filter(user_type='customer', kyc_status='incomplete').count(),
+            },
+            'kyc_verified_today': KYCProfile.objects.filter(
+                updated_at__date=timezone.now().date(),
+                status='verified'
+            ).count(),
         }
     else:
         stats = {

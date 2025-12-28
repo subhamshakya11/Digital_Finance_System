@@ -1,21 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { FaCar, FaFileAlt, FaMoneyBillWave, FaBell, FaPlus, FaChartLine, FaClock, FaCheckCircle } from 'react-icons/fa';
+import { Link, useNavigate } from 'react-router-dom';
+import { FaCar, FaFileAlt, FaMoneyBillWave, FaBell, FaPlus, FaChartLine, FaClock, FaCheckCircle, FaExclamationTriangle, FaTimes } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import authService from '../../services/auth';
 import loanService from '../../services/loans';
 import dashboardService from '../../services/dashboard';
+import kycService from '../../services/kyc';
 import Navbar from '../Shared/Navbar';
 import ChatWidget from '../Chatbot/ChatWidget'; // Chat integration
 
 const CustomerDashboard = () => {
+  const navigate = useNavigate();
   const [stats, setStats] = useState({});
   const [loans, setLoans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [kycStatus, setKycStatus] = useState(null);
+  const [showKycModal, setShowKycModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [kycDetails, setKycDetails] = useState(null);
   const user = authService.getCurrentUser();
 
   useEffect(() => {
     loadDashboardData();
+    checkKYCStatus();
   }, []);
 
   const loadDashboardData = async () => {
@@ -30,6 +37,26 @@ const CustomerDashboard = () => {
       console.error('Error loading dashboard:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkKYCStatus = async () => {
+    try {
+      const status = await kycService.checkStatus();
+      setKycStatus(status);
+
+      // Show modal if KYC is not verified
+      if (status.kyc_status !== 'verified') {
+        setShowKycModal(true);
+      }
+
+      // Load details if under review or verified
+      if (status.kyc_status !== 'incomplete') {
+        const details = await kycService.getMyKYC();
+        setKycDetails(details);
+      }
+    } catch (error) {
+      console.error('Error checking KYC status:', error);
     }
   };
 
@@ -73,7 +100,7 @@ const CustomerDashboard = () => {
         <div className="bg-gradient-primary rounded-2xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-32 -mt-32"></div>
           <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full -ml-24 -mb-24"></div>
-          
+
           <div className="relative z-10">
             <div className="flex items-center space-x-2 mb-2">
               <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
@@ -287,6 +314,126 @@ const CustomerDashboard = () => {
           )}
         </div>
       </div>
+
+      {/* KYC Verification Modal */}
+      {showKycModal && kycStatus && kycStatus.kyc_status !== 'verified' && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative animate-fade-in">
+            <button
+              onClick={() => setShowKycModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+            >
+              <FaTimes size={20} />
+            </button>
+
+            <div className="text-center">
+              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <FaExclamationTriangle className="text-3xl text-yellow-600" />
+              </div>
+
+              <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                KYC Verification Required
+              </h2>
+
+              <p className="text-gray-600 mb-6">
+                {kycStatus.kyc_status === 'incomplete' &&
+                  'Please complete your KYC verification to apply for loans and access all features.'}
+                {kycStatus.kyc_status === 'pending' &&
+                  'Your KYC is under review. You will be notified once it is verified.'}
+                {kycStatus.kyc_status === 'rejected' && (
+                  <div className="space-y-2">
+                    <p className="text-gray-600 font-medium italic">" {kycStatus.rejection_reason || 'No reason provided.'} "</p>
+                    <p className="text-gray-600">Please update your information and resubmit.</p>
+                  </div>
+                )}
+              </p>
+
+              <div className="space-y-3">
+                {(kycStatus.kyc_status === 'incomplete' || kycStatus.kyc_status === 'rejected') && (
+                  <button
+                    onClick={() => navigate('/customer/kyc')}
+                    className="w-full px-6 py-3 bg-gradient-primary text-white rounded-xl font-semibold hover:shadow-glow transition-all"
+                  >
+                    Complete KYC Now
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setShowKycModal(false)}
+                  className="w-full px-6 py-3 border-2 border-gray-300 rounded-xl font-semibold hover:bg-gray-50 transition-all"
+                >
+                  {kycStatus.kyc_status === 'pending' ? 'Close' : 'Maybe Later'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KYC Details Modal */}
+      {showDetailsModal && kycDetails && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 md:p-8 relative animate-scale-in">
+            <button
+              onClick={() => setShowDetailsModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 bg-gray-100 p-2 rounded-full"
+            >
+              <FaTimes size={18} />
+            </button>
+
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-gray-800">Submitted KYC Details</h2>
+              <p className="text-sm text-gray-500">Provided for verification on {new Date(kycDetails.updated_at).toLocaleDateString()}</p>
+            </div>
+
+            <div className="space-y-6">
+              <section>
+                <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-3">Personal Information</h3>
+                <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl">
+                  <div>
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">Full Name</p>
+                    <p className="font-medium text-gray-800">{kycDetails.full_name}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">Gender</p>
+                    <p className="font-medium text-gray-800 capitalize">{kycDetails.gender}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">Citizenship No.</p>
+                    <p className="font-medium text-gray-800">{kycDetails.citizenship_number}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">Occupation</p>
+                    <p className="font-medium text-gray-800">{kycDetails.occupation}</p>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest mb-3">Permanent Address</h3>
+                <div className="bg-gray-50 p-4 rounded-xl">
+                  <p className="font-medium text-gray-800">{kycDetails.permanent_address}</p>
+                  <p className="text-sm text-gray-500">{kycDetails.permanent_district}, {kycDetails.permanent_province}</p>
+                </div>
+              </section>
+
+              <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl flex items-start">
+                <FaClock className="text-yellow-600 mt-1 mr-3 flex-shrink-0" />
+                <p className="text-sm text-yellow-800">
+                  This information is currently <strong>Under Review</strong>. You cannot edit these details until the review is complete or rejected.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowDetailsModal(false)}
+              className="w-full mt-8 py-3 bg-gray-800 text-white rounded-xl font-bold hover:bg-gray-900 transition-all"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Chat widget appears after login */}
       <ChatWidget />

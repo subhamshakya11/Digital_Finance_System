@@ -14,6 +14,8 @@ import EMITracker from './components/Customer/EMITracker';
 import VehicleBrowser from './components/Customer/VehicleBrowser';
 import Profile from './components/Customer/Profile'; // Profile page
 import Settings from './components/Customer/Settings'; // Settings page
+import KYCForm from './components/Customer/KYCForm'; // KYC Form
+import Applications from './components/Customer/Applications'; // Applications Page
 
 // Sales Rep Pages
 import SalesRepDashboard from './components/SalesRep/Dashboard';
@@ -97,6 +99,22 @@ function App() {
           element={
             <ProtectedRoute allowedRoles={['customer']}>
               <VehicleBrowser />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/customer/kyc"
+          element={
+            <ProtectedRoute allowedRoles={['customer']}>
+              <KYCForm />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/customer/applications"
+          element={
+            <ProtectedRoute allowedRoles={['customer']}>
+              <Applications />
             </ProtectedRoute>
           }
         />

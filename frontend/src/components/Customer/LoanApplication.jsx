@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { FaCar, FaMoneyBillWave, FaCalendar, FaCalculator } from 'react-icons/fa';
+import { FaCar, FaMoneyBillWave, FaCalendar, FaCalculator, FaExclamationTriangle } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import Navbar from '../Shared/Navbar';
 import vehicleService from '../../services/vehicles';
 import loanService from '../../services/loans';
+import kycService from '../../services/kyc';
 import { calculateLoanDetails, formatCurrency } from '../../utils/emiCalculator';
 import { EMPLOYMENT_TYPES } from '../../utils/constants';
 import getErrorMessage from '../../utils/errorHelper';
@@ -16,12 +17,14 @@ const LoanApplication = () => {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [emiPreview, setEmiPreview] = useState(null);
+  const [kycStatus, setKycStatus] = useState(null);
+  const [checkingKYC, setCheckingKYC] = useState(true);
 
   const [formData, setFormData] = useState({
     vehicle: '',
     loan_amount: '',
     down_payment: '',
-    interest_rate: 12.0,
+    interest_rate: 11.0,
     tenure_months: 60,
     monthly_income: '',
     employment_type: '',
@@ -30,8 +33,26 @@ const LoanApplication = () => {
   });
 
   useEffect(() => {
+    checkKYCStatus();
     loadVehicles();
   }, []);
+
+  const checkKYCStatus = async () => {
+    try {
+      const status = await kycService.checkStatus();
+      setKycStatus(status);
+
+      if (status.kyc_status !== 'verified') {
+        // Just set the status, let the render handle the UI
+        console.log('KYC not verified:', status.kyc_status);
+      }
+    } catch (error) {
+      console.error('Error checking KYC:', error);
+      toast.error(getErrorMessage(error));
+    } finally {
+      setCheckingKYC(false);
+    }
+  };
 
   useEffect(() => {
     if (formData.loan_amount && formData.interest_rate && formData.tenure_months) {
@@ -188,6 +209,85 @@ const LoanApplication = () => {
 
   const selectedVehicle = vehicles.find(v => v.id === formData.vehicle);
 
+  if (checkingKYC) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600 font-medium">Verifying KYC status...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (kycStatus && kycStatus.kyc_status !== 'verified') {
+    const isPending = kycStatus.kyc_status === 'pending';
+    const isRejected = kycStatus.kyc_status === 'rejected';
+
+    return (
+      <div className="min-h-screen bg-gray-100">
+        <Navbar />
+        <div className="max-w-4xl mx-auto p-6 text-center">
+          <div className={`bg-white rounded-3xl shadow-xl overflow-hidden border ${isPending ? 'border-blue-100' : isRejected ? 'border-red-100' : 'border-yellow-100'
+            }`}>
+            <div className={`py-12 px-8 ${isPending ? 'bg-blue-50' : isRejected ? 'bg-red-50' : 'bg-yellow-50'
+              }`}>
+              <div className={`w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 transform transition-transform hover:scale-110 ${isPending ? 'bg-blue-100 text-blue-600' : isRejected ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-600'
+                }`}>
+                {isPending ? (
+                  <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                ) : isRejected ? (
+                  <FaExclamationTriangle className="text-5xl" />
+                ) : (
+                  <FaExclamationTriangle className="text-5xl" />
+                )}
+              </div>
+
+              <h2 className="text-3xl font-bold text-gray-900 mb-4">
+                {isPending ? 'KYC Under Review' : isRejected ? 'KYC Verification Rejected' : 'KYC Verification Required'}
+              </h2>
+
+              <p className="text-lg text-gray-600 max-w-lg mx-auto mb-8 leading-relaxed">
+                {isPending
+                  ? "We are currently reviewing your documents. You'll be able to apply for loans as soon as your account is verified. This usually takes 24-48 hours."
+                  : isRejected
+                    ? "Unfortunately, your KYC application was rejected. Please review the reason below and update your information."
+                    : "To ensure the security of our community and comply with financial regulations, you need to complete your KYC verification before applying for a loan."}
+              </p>
+
+              {isRejected && kycStatus.rejection_reason && (
+                <div className="bg-white border-l-4 border-red-500 p-4 rounded-xl mb-8 text-left max-w-md mx-auto shadow-sm">
+                  <p className="text-sm font-semibold text-red-700 uppercase tracking-wider mb-1">Reason for Rejection:</p>
+                  <p className="text-gray-700">{kycStatus.rejection_reason}</p>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <button
+                  onClick={() => navigate('/customer/kyc')}
+                  className={`px-10 py-4 rounded-2xl font-bold shadow-lg transition-all active:scale-95 ${isPending
+                    ? 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-blue-200'
+                    : isRejected
+                      ? 'bg-red-600 text-white hover:bg-red-700 hover:shadow-red-200'
+                      : 'bg-gradient-primary text-white hover:shadow-glow'
+                    }`}
+                >
+                  {isPending ? 'View My Info' : isRejected ? 'Update & Resubmit KYC' : 'Complete KYC Now'}
+                </button>
+                <button
+                  onClick={() => navigate('/customer/dashboard')}
+                  className="px-10 py-4 bg-white text-gray-700 border-2 border-gray-200 rounded-2xl font-bold hover:bg-gray-50 transition-all active:scale-95"
+                >
+                  Back to Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-100">
       <Navbar />
@@ -319,8 +419,8 @@ const LoanApplication = () => {
                       step="0.1"
                       name="interest_rate"
                       value={formData.interest_rate}
-                      onChange={handleChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed"
+                      readOnly
                       required
                     />
                   </div>

@@ -5,7 +5,9 @@ import Navbar from '../Shared/Navbar';
 import loanService from '../../services/loans';
 import dashboardService from '../../services/dashboard';
 import vehicleService from '../../services/vehicles';
-import { FaFileAlt, FaCheckCircle, FaClock, FaEye, FaTrash, FaTimes, FaEdit } from 'react-icons/fa';
+import kycService from '../../services/kyc';
+import api from '../../services/api';
+import { FaFileAlt, FaCheckCircle, FaClock, FaEye, FaTrash, FaTimes, FaEdit, FaIdCard, FaUser, FaCheck, FaBan } from 'react-icons/fa';
 import getErrorMessage from '../../utils/errorHelper';
 
 const SalesRepDashboard = () => {
@@ -14,6 +16,9 @@ const SalesRepDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('applications');
   const [vehicles, setVehicles] = useState([]);
+  const [kycProfiles, setKycProfiles] = useState([]);
+  const [selectedKYC, setSelectedKYC] = useState(null);
+  const [showKYCModal, setShowKYCModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState(null);
@@ -27,7 +32,18 @@ const SalesRepDashboard = () => {
     price: '',
     max_loan_percentage: 80,
     description: '',
-    is_available: true
+    is_available: true,
+    top_speed: '',
+    mileage: '',
+    fuel_tank_capacity: '',
+    horsepower: '',
+    engine_capacity: '',
+    abs_status: false,
+    cbs_status: false,
+    brake_type: 'disc',
+    wheel_size: '',
+    color: '',
+    fuel_system: 'fi'
   });
 
   useEffect(() => {
@@ -36,10 +52,11 @@ const SalesRepDashboard = () => {
 
   const loadDashboardData = async () => {
     try {
-      const [statsData, loansData, vehiclesData] = await Promise.all([
+      const [statsData, loansData, vehiclesData, kycData] = await Promise.all([
         dashboardService.getStats(),
         loanService.getAll(),
-        vehicleService.getAll()
+        vehicleService.getAll(),
+        kycService.getAllKYC().catch(() => ({ results: [] }))
       ]);
       setStats(statsData);
       setVehicles(vehiclesData.results || vehiclesData);
@@ -48,6 +65,11 @@ const SalesRepDashboard = () => {
         loan => loan.status === 'submitted' || loan.status === 'under_review'
       );
       setApplications(pendingVerification);
+
+      // Filter pending KYC profiles
+      const allKYC = kycData.results || kycData || [];
+      const pendingKYC = allKYC.filter(kyc => kyc.status === 'pending');
+      setKycProfiles(pendingKYC);
     } catch (error) {
       console.error('Error loading dashboard:', error);
       toast.error('Failed to load dashboard data');
@@ -112,7 +134,24 @@ const SalesRepDashboard = () => {
       toast.success('Vehicle deleted');
       setVehicles(vehicles.filter(v => v.id !== id));
     } catch (error) {
-      toast.error('Failed to delete vehicle');
+      toast.error(getErrorMessage(error));
+    }
+  };
+
+  const handleViewKYC = (kyc) => {
+    setSelectedKYC(kyc);
+    setShowKYCModal(true);
+  };
+
+  const handleVerifyKYC = async (kycId, action, reason = '') => {
+    try {
+      await kycService.verifyKYC(kycId, action, reason);
+      toast.success(`KYC ${action === 'approve' ? 'approved' : 'rejected'} successfully`);
+      setShowKYCModal(false);
+      setSelectedKYC(null);
+      loadDashboardData();
+    } catch (error) {
+      toast.error(getErrorMessage(error));
     }
   };
 
@@ -151,6 +190,12 @@ const SalesRepDashboard = () => {
               className={`px-4 py-2 rounded-md transition-colors ${activeTab === 'applications' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
             >
               Applications
+            </button>
+            <button
+              onClick={() => setActiveTab('kyc')}
+              className={`px-4 py-2 rounded-md transition-colors ${activeTab === 'kyc' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              KYC Verification
             </button>
             <button
               onClick={() => setActiveTab('vehicles')}
@@ -261,6 +306,114 @@ const SalesRepDashboard = () => {
                           <FaEye className="mr-2" />
                           Verify
                         </Link>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        ) : activeTab === 'kyc' ? (
+          <>
+            {/* KYC Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 text-sm">Pending KYC</p>
+                    <p className="text-3xl font-bold text-yellow-600">
+                      {stats.kyc_pending || 0}
+                    </p>
+                  </div>
+                  <FaClock className="text-4xl text-yellow-600" />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 text-sm">Verified Today</p>
+                    <p className="text-3xl font-bold text-green-600">
+                      {stats.kyc_verified_today || 0}
+                    </p>
+                  </div>
+                  <FaCheckCircle className="text-4xl text-green-600" />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-gray-500 text-sm">Total KYC</p>
+                    <p className="text-3xl font-bold text-blue-600">
+                      {stats.total_kyc || 0}
+                    </p>
+                  </div>
+                  <FaIdCard className="text-4xl text-blue-600" />
+                </div>
+              </div>
+            </div>
+
+            {/* Pending KYC Verifications */}
+            <div className="bg-white rounded-lg shadow">
+              <div className="p-6 border-b">
+                <h2 className="text-xl font-bold text-gray-800">
+                  KYC Profiles Pending Verification
+                </h2>
+              </div>
+
+              <div className="p-6">
+                {kycProfiles.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <FaCheckCircle className="text-6xl mx-auto mb-4 opacity-50" />
+                    <p>No KYC profiles pending verification</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {kycProfiles.map((kyc) => (
+                      <div
+                        key={kyc.id}
+                        className="flex items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow"
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center mb-2">
+                            <FaUser className="text-gray-400 mr-2" />
+                            <h3 className="font-semibold text-lg text-gray-800">
+                              {kyc.full_name}
+                            </h3>
+                            <span className="ml-3 px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                              PENDING
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <p className="text-gray-600">Username</p>
+                              <p className="font-medium">{kyc.user_name}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-600">Citizenship</p>
+                              <p className="font-medium">{kyc.citizenship_number}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-600">Phone</p>
+                              <p className="font-medium">{kyc.phone}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-600">Documents</p>
+                              <p className="font-medium">{kyc.documents?.length || 0} uploaded</p>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-2">
+                            Submitted: {new Date(kyc.submitted_at).toLocaleString()}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleViewKYC(kyc)}
+                          className="ml-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                        >
+                          <FaEye className="mr-2" />
+                          Review
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -433,6 +586,117 @@ const SalesRepDashboard = () => {
                       onChange={e => setNewVehicle({ ...newVehicle, max_loan_percentage: e.target.value })}
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Top Speed (km/h)</label>
+                    <input
+                      type="number"
+                      className="w-full p-2 border rounded"
+                      value={newVehicle.top_speed}
+                      onChange={e => setNewVehicle({ ...newVehicle, top_speed: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mileage (km/l)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full p-2 border rounded"
+                      value={newVehicle.mileage}
+                      onChange={e => setNewVehicle({ ...newVehicle, mileage: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Fuel Tank (L)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      className="w-full p-2 border rounded"
+                      value={newVehicle.fuel_tank_capacity}
+                      onChange={e => setNewVehicle({ ...newVehicle, fuel_tank_capacity: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Horsepower (bhp)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      className="w-full p-2 border rounded"
+                      value={newVehicle.horsepower}
+                      onChange={e => setNewVehicle({ ...newVehicle, horsepower: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Engine (cc)</label>
+                    <input
+                      type="number"
+                      className="w-full p-2 border rounded"
+                      value={newVehicle.engine_capacity}
+                      onChange={e => setNewVehicle({ ...newVehicle, engine_capacity: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Brake Type</label>
+                    <select
+                      className="w-full p-2 border rounded"
+                      value={newVehicle.brake_type}
+                      onChange={e => setNewVehicle({ ...newVehicle, brake_type: e.target.value })}
+                    >
+                      <option value="disc">Disc</option>
+                      <option value="drum">Drum</option>
+                      <option value="both">Both Disc</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Wheel Size</label>
+                    <input
+                      type="text"
+                      className="w-full p-2 border rounded"
+                      value={newVehicle.wheel_size}
+                      onChange={e => setNewVehicle({ ...newVehicle, wheel_size: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                    <input
+                      type="text"
+                      className="w-full p-2 border rounded"
+                      value={newVehicle.color}
+                      onChange={e => setNewVehicle({ ...newVehicle, color: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Fuel System</label>
+                    <select
+                      className="w-full p-2 border rounded"
+                      value={newVehicle.fuel_system}
+                      onChange={e => setNewVehicle({ ...newVehicle, fuel_system: e.target.value })}
+                    >
+                      <option value="fi">Fuel Injection (FI)</option>
+                      <option value="carburetor">Carburetor</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="new_abs"
+                        className="mr-2"
+                        checked={newVehicle.abs_status}
+                        onChange={e => setNewVehicle({ ...newVehicle, abs_status: e.target.checked })}
+                      />
+                      <label htmlFor="new_abs" className="text-sm">ABS</label>
+                    </div>
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="new_cbs"
+                        className="mr-2"
+                        checked={newVehicle.cbs_status}
+                        onChange={e => setNewVehicle({ ...newVehicle, cbs_status: e.target.checked })}
+                      />
+                      <label htmlFor="new_cbs" className="text-sm">CBS</label>
+                    </div>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
@@ -575,6 +839,117 @@ const SalesRepDashboard = () => {
                       onChange={e => setEditingVehicle({ ...editingVehicle, max_loan_percentage: e.target.value })}
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Top Speed (km/h)</label>
+                    <input
+                      type="number"
+                      className="w-full p-2 border rounded"
+                      value={editingVehicle.top_speed || ''}
+                      onChange={e => setEditingVehicle({ ...editingVehicle, top_speed: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mileage (km/l)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="w-full p-2 border rounded"
+                      value={editingVehicle.mileage || ''}
+                      onChange={e => setEditingVehicle({ ...editingVehicle, mileage: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Fuel Tank (L)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      className="w-full p-2 border rounded"
+                      value={editingVehicle.fuel_tank_capacity || ''}
+                      onChange={e => setEditingVehicle({ ...editingVehicle, fuel_tank_capacity: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Horsepower (bhp)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      className="w-full p-2 border rounded"
+                      value={editingVehicle.horsepower || ''}
+                      onChange={e => setEditingVehicle({ ...editingVehicle, horsepower: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Engine (cc)</label>
+                    <input
+                      type="number"
+                      className="w-full p-2 border rounded"
+                      value={editingVehicle.engine_capacity || ''}
+                      onChange={e => setEditingVehicle({ ...editingVehicle, engine_capacity: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Brake Type</label>
+                    <select
+                      className="w-full p-2 border rounded"
+                      value={editingVehicle.brake_type || 'disc'}
+                      onChange={e => setEditingVehicle({ ...editingVehicle, brake_type: e.target.value })}
+                    >
+                      <option value="disc">Disc</option>
+                      <option value="drum">Drum</option>
+                      <option value="both">Both Disc</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Wheel Size</label>
+                    <input
+                      type="text"
+                      className="w-full p-2 border rounded"
+                      value={editingVehicle.wheel_size || ''}
+                      onChange={e => setEditingVehicle({ ...editingVehicle, wheel_size: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                    <input
+                      type="text"
+                      className="w-full p-2 border rounded"
+                      value={editingVehicle.color || ''}
+                      onChange={e => setEditingVehicle({ ...editingVehicle, color: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Fuel System</label>
+                    <select
+                      className="w-full p-2 border rounded"
+                      value={editingVehicle.fuel_system || 'fi'}
+                      onChange={e => setEditingVehicle({ ...editingVehicle, fuel_system: e.target.value })}
+                    >
+                      <option value="fi">Fuel Injection (FI)</option>
+                      <option value="carburetor">Carburetor</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="edit_abs"
+                        className="mr-2"
+                        checked={editingVehicle.abs_status}
+                        onChange={e => setEditingVehicle({ ...editingVehicle, abs_status: e.target.checked })}
+                      />
+                      <label htmlFor="edit_abs" className="text-sm">ABS</label>
+                    </div>
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id="edit_cbs"
+                        className="mr-2"
+                        checked={editingVehicle.cbs_status}
+                        onChange={e => setEditingVehicle({ ...editingVehicle, cbs_status: e.target.checked })}
+                      />
+                      <label htmlFor="edit_cbs" className="text-sm">CBS</label>
+                    </div>
+                  </div>
                   <div className="flex items-center space-x-2 mt-4 md:mt-0">
                     <input
                       type="checkbox"
@@ -625,6 +1000,168 @@ const SalesRepDashboard = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* KYC Verification Modal */}
+        {showKYCModal && selectedKYC && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+            <div className="bg-white rounded-lg max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto relative">
+              <button
+                onClick={() => {
+                  setShowKYCModal(false);
+                  setSelectedKYC(null);
+                }}
+                className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 transition-colors"
+                title="Close"
+              >
+                <FaTimes size={24} />
+              </button>
+
+              <h2 className="text-2xl font-bold mb-6">KYC Verification - {selectedKYC.full_name}</h2>
+
+              <div className="space-y-6">
+                {/* Personal Information */}
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h3 className="font-bold text-lg mb-3 flex items-center">
+                    <FaUser className="mr-2" /> Personal Information
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-gray-600">Full Name</p>
+                      <p className="font-medium">{selectedKYC.full_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Father's Name</p>
+                      <p className="font-medium">{selectedKYC.father_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Mother's Name</p>
+                      <p className="font-medium">{selectedKYC.mother_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Grandfather's Name</p>
+                      <p className="font-medium">{selectedKYC.grandfather_name}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Date of Birth</p>
+                      <p className="font-medium">{selectedKYC.date_of_birth}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Gender</p>
+                      <p className="font-medium capitalize">{selectedKYC.gender}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Address Information */}
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h3 className="font-bold text-lg mb-3">Address Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-gray-600 font-semibold mb-1">Permanent Address</p>
+                      <p className="font-medium">{selectedKYC.permanent_address}</p>
+                      <p className="text-gray-500">{selectedKYC.permanent_district}, {selectedKYC.permanent_province}</p>
+                    </div>
+                    {selectedKYC.temporary_address && (
+                      <div>
+                        <p className="text-gray-600 font-semibold mb-1">Temporary Address</p>
+                        <p className="font-medium">{selectedKYC.temporary_address}</p>
+                        <p className="text-gray-500">{selectedKYC.temporary_district}, {selectedKYC.temporary_province}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Contact & Identification */}
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <h3 className="font-bold text-lg mb-3 flex items-center">
+                    <FaIdCard className="mr-2" /> Identification
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-gray-600">Citizenship No.</p>
+                      <p className="font-medium">{selectedKYC.citizenship_number}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Issue Date</p>
+                      <p className="font-medium">{selectedKYC.citizenship_issue_date}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Issue District</p>
+                      <p className="font-medium">{selectedKYC.citizenship_issue_district}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Phone</p>
+                      <p className="font-medium">{selectedKYC.phone}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Email</p>
+                      <p className="font-medium">{selectedKYC.email}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Occupation</p>
+                      <p className="font-medium">{selectedKYC.occupation}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Documents */}
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <h3 className="font-bold text-lg mb-3">Uploaded Documents</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {selectedKYC.documents && selectedKYC.documents.length > 0 ? (
+                      selectedKYC.documents.map((doc) => (
+                        <div key={doc.id} className="border rounded p-3 bg-white">
+                          <p className="text-sm font-medium capitalize">
+                            {doc.document_type.replace('_', ' ')}
+                          </p>
+                          <a
+                            href={doc.file}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            View Document
+                          </a>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-gray-500 col-span-3">No documents uploaded</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex justify-end space-x-3 pt-4 border-t">
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Are you sure you want to reject this KYC?')) {
+                        const reason = prompt('Please provide a reason for rejection:');
+                        if (reason) {
+                          handleVerifyKYC(selectedKYC.id, 'reject', reason);
+                        }
+                      }
+                    }}
+                    className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center"
+                  >
+                    <FaBan className="mr-2" />
+                    Reject KYC
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Approve this KYC verification?')) {
+                        handleVerifyKYC(selectedKYC.id, 'approve');
+                      }
+                    }}
+                    className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center"
+                  >
+                    <FaCheck className="mr-2" />
+                    Approve KYC
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

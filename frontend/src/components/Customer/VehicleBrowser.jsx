@@ -17,7 +17,10 @@ const VehicleBrowser = () => {
     fuel_type: '',
     min_price: '',
     max_price: '',
+    min_mileage: '',
   });
+  const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
   useEffect(() => {
     loadVehicles();
@@ -63,6 +66,9 @@ const VehicleBrowser = () => {
     if (filters.max_price) {
       filtered = filtered.filter(v => v.price <= parseFloat(filters.max_price));
     }
+    if (filters.min_mileage) {
+      filtered = filtered.filter(v => v.mileage >= parseFloat(filters.min_mileage));
+    }
 
     setFilteredVehicles(filtered);
   };
@@ -77,6 +83,7 @@ const VehicleBrowser = () => {
       fuel_type: '',
       min_price: '',
       max_price: '',
+      min_mileage: '',
     });
     setSearchTerm('');
   };
@@ -169,6 +176,17 @@ const VehicleBrowser = () => {
                   className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none text-sm"
                 />
               </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">Min Mileage (km/l)</label>
+                <input
+                  type="number"
+                  value={filters.min_mileage}
+                  onChange={(e) => handleFilterChange('min_mileage', e.target.value)}
+                  placeholder="0"
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none text-sm"
+                />
+              </div>
             </div>
 
             {/* Clear Filters Button - Professional & Centered */}
@@ -213,10 +231,20 @@ const VehicleBrowser = () => {
                   <img
                     src={vehicle.image}
                     alt={vehicle.name}
-                    className="w-full h-48 object-cover"
+                    className="w-full h-48 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => {
+                      setSelectedVehicle(vehicle);
+                      setShowDetailModal(true);
+                    }}
                   />
                 ) : (
-                  <div className="w-full h-48 bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
+                  <div
+                    className="w-full h-48 bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center cursor-pointer"
+                    onClick={() => {
+                      setSelectedVehicle(vehicle);
+                      setShowDetailModal(true);
+                    }}
+                  >
                     <FaCar className="text-6xl text-blue-200" />
                   </div>
                 )}
@@ -278,6 +306,150 @@ const VehicleBrowser = () => {
           </div>
         )}
       </div>
+
+      {/* Vehicle Detail Modal */}
+      {showDetailModal && selectedVehicle && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-4xl w-full p-0 max-h-[90vh] overflow-hidden relative shadow-2xl">
+            <button
+              onClick={() => setShowDetailModal(false)}
+              className="absolute top-4 right-4 bg-white/80 backdrop-blur-sm p-2 rounded-full text-gray-500 hover:text-gray-800 transition-colors z-10 shadow-sm"
+            >
+              <span className="sr-only">Close</span>
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+
+            <div className="flex flex-col md:flex-row max-h-[90vh]">
+              {/* Image Section */}
+              <div className="md:w-1/2 h-64 md:h-auto bg-gray-50 flex items-center justify-center p-8 sticky top-0">
+                {selectedVehicle.image ? (
+                  <img
+                    src={selectedVehicle.image}
+                    alt={selectedVehicle.name}
+                    className="w-full h-full object-contain drop-shadow-2xl scale-110"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <FaCar className="text-9xl text-blue-100" />
+                  </div>
+                )}
+              </div>
+
+              {/* Details Section */}
+              <div className="md:w-1/2 p-6 md:p-10 overflow-y-auto bg-white">
+                <div className="mb-6">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-bold rounded-full uppercase tracking-wider">
+                      {selectedVehicle.brand}
+                    </span>
+                    <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold rounded-full uppercase tracking-wider">
+                      {selectedVehicle.year}
+                    </span>
+                  </div>
+                  <h2 className="text-3xl font-bold text-gray-900 leading-tight">
+                    {selectedVehicle.brand} {selectedVehicle.model}
+                  </h2>
+                  <p className="text-gray-500 font-medium">{selectedVehicle.name}</p>
+                </div>
+
+                <div className="flex items-baseline space-x-2 mb-8">
+                  <span className="text-3xl font-black text-blue-600">NPR {selectedVehicle.price.toLocaleString()}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-y-6 gap-x-4 mb-8">
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Type</p>
+                    <p className="font-semibold text-gray-700 capitalize">{selectedVehicle.vehicle_type.replace('_', ' ')}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Fuel</p>
+                    <p className="font-semibold text-gray-700 capitalize">{selectedVehicle.fuel_type}</p>
+                  </div>
+                  {selectedVehicle.top_speed && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Top Speed</p>
+                      <p className="font-semibold text-gray-700">{selectedVehicle.top_speed} km/h</p>
+                    </div>
+                  )}
+                  {selectedVehicle.mileage && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Mileage</p>
+                      <p className="font-semibold text-gray-700">{selectedVehicle.mileage} km/l</p>
+                    </div>
+                  )}
+                  {selectedVehicle.engine_capacity && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Engine</p>
+                      <p className="font-semibold text-gray-700">{selectedVehicle.engine_capacity} cc</p>
+                    </div>
+                  )}
+                  {selectedVehicle.horsepower && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Horsepower</p>
+                      <p className="font-semibold text-gray-700">{selectedVehicle.horsepower} bhp</p>
+                    </div>
+                  )}
+                  {selectedVehicle.fuel_tank_capacity && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Fuel Tank</p>
+                      <p className="font-semibold text-gray-700">{selectedVehicle.fuel_tank_capacity} L</p>
+                    </div>
+                  )}
+                  {selectedVehicle.fuel_system && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Fuel System</p>
+                      <p className="font-semibold text-gray-700 uppercase">{selectedVehicle.fuel_system}</p>
+                    </div>
+                  )}
+                  {selectedVehicle.brake_type && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Brakes</p>
+                      <p className="font-semibold text-gray-700 capitalize">{selectedVehicle.brake_type}</p>
+                    </div>
+                  )}
+                  {selectedVehicle.color && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Color</p>
+                      <p className="font-semibold text-gray-700 capitalize">{selectedVehicle.color}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-6 mb-8 bg-gray-50 p-4 rounded-xl">
+                  <div className="flex items-center text-sm font-bold text-green-600">
+                    {selectedVehicle.abs_status ? '✓ ABS Equipped' : '✗ No ABS'}
+                  </div>
+                  <div className="flex items-center text-sm font-bold text-green-600">
+                    {selectedVehicle.cbs_status ? '✓ CBS Equipped' : '✗ No CBS'}
+                  </div>
+                </div>
+
+                <div className="mb-8">
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Description</p>
+                  <p className="text-gray-600 leading-relaxed italic">
+                    {selectedVehicle.description || "No description available for this vehicle."}
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <Link
+                    to="/customer/apply-loan"
+                    state={{ selectedVehicle }}
+                    className="flex-1 text-center bg-blue-600 text-white py-4 rounded-xl hover:bg-blue-700 transition-all font-bold shadow-lg shadow-blue-200"
+                  >
+                    Apply for Finance
+                  </Link>
+                  <button className="px-6 py-4 border-2 border-gray-100 rounded-xl font-bold text-gray-400 hover:text-red-500 hover:border-red-50 transition-all">
+                    <FaHeart />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

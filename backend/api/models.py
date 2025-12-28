@@ -12,7 +12,15 @@ class User(AbstractUser):
         ('admin', 'Admin'),
     )
     
+    KYC_STATUS_CHOICES = (
+        ('incomplete', 'Incomplete'),
+        ('pending', 'Pending Verification'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    )
+    
     user_type = models.CharField(max_length=20, choices=USER_TYPES, default='customer')
+    kyc_status = models.CharField(max_length=20, choices=KYC_STATUS_CHOICES, default='incomplete')
     
     # Make email and phone REQUIRED for notifications
     email = models.EmailField(unique=True)  # Required and unique
@@ -63,6 +71,22 @@ class Vehicle(models.Model):
     image = models.ImageField(upload_to='vehicles/', null=True, blank=True)
     is_available = models.BooleanField(default=True)
     max_loan_percentage = models.IntegerField(default=80, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    
+    # Technical Specifications
+    top_speed = models.IntegerField(null=True, blank=True, help_text="Top speed in km/h")
+    mileage = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="Mileage in km/l")
+    fuel_tank_capacity = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="Fuel tank capacity in Liters")
+    horsepower = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True, help_text="Horsepower in bhp")
+    engine_capacity = models.IntegerField(null=True, blank=True, help_text="Engine capacity in cc")
+    fuel_system = models.CharField(max_length=50, choices=(('fi', 'Fuel Injection (FI)'), ('carburetor', 'Carburetor')), default='fi', null=True, blank=True)
+    
+    # Safety and Features
+    abs_status = models.BooleanField(default=False, verbose_name="Has ABS")
+    cbs_status = models.BooleanField(default=False, verbose_name="Has CBS")
+    brake_type = models.CharField(max_length=50, choices=(('disc', 'Disc'), ('drum', 'Drum'), ('both', 'Both Disc')), default='disc')
+    wheel_size = models.CharField(max_length=50, blank=True, null=True)
+    color = models.CharField(max_length=50, blank=True, null=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -93,7 +117,7 @@ class LoanApplication(models.Model):
     
     loan_amount = models.DecimalField(max_digits=12, decimal_places=2)
     down_payment = models.DecimalField(max_digits=12, decimal_places=2)
-    interest_rate = models.DecimalField(max_digits=5, decimal_places=2, default=12.0)
+    interest_rate = models.DecimalField(max_digits=5, decimal_places=2, default=11.0)
     tenure_months = models.IntegerField(validators=[MinValueValidator(6), MaxValueValidator(120)])
     monthly_emi = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     
@@ -286,3 +310,114 @@ class ChatMessage(models.Model):
     
     def __str__(self):
         return f"{self.user.username} - {self.created_at}"
+
+
+class KYCProfile(models.Model):
+    """KYC Profile Model for Customer Verification"""
+    STATUS_CHOICES = (
+        ('incomplete', 'Incomplete'),
+        ('pending', 'Pending Verification'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    )
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='kyc_profile')
+    
+    # Personal Information
+    full_name = models.CharField(max_length=200)
+    father_name = models.CharField(max_length=200)
+    mother_name = models.CharField(max_length=200)
+    grandfather_name = models.CharField(max_length=200)
+    date_of_birth = models.DateField()
+    gender = models.CharField(max_length=10, choices=(('male', 'Male'), ('female', 'Female'), ('other', 'Other')))
+    
+    # Address Information
+    permanent_address = models.TextField()
+    permanent_district = models.CharField(max_length=100)
+    permanent_province = models.CharField(max_length=100)
+    temporary_address = models.TextField(blank=True, null=True)
+    temporary_district = models.CharField(max_length=100, blank=True, null=True)
+    temporary_province = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Contact Information
+    phone = models.CharField(max_length=15)
+    alternate_phone = models.CharField(max_length=15, blank=True, null=True)
+    email = models.EmailField()
+    
+    # Identification Numbers
+    citizenship_number = models.CharField(max_length=50, unique=True)
+    citizenship_issue_date = models.DateField()
+    citizenship_issue_district = models.CharField(max_length=100)
+    
+    pan_number = models.CharField(max_length=20, unique=True, blank=True, null=True)
+    license_number = models.CharField(max_length=50, blank=True, null=True)
+    passport_number = models.CharField(max_length=50, blank=True, null=True)
+    
+    # Occupation
+    occupation = models.CharField(max_length=100)
+    employer_name = models.CharField(max_length=200, blank=True, null=True)
+    annual_income = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    
+    # Status and Verification
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='incomplete')
+    verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_kyc_profiles')
+    verification_notes = models.TextField(blank=True)
+    rejection_reason = models.TextField(blank=True)
+    
+    # Timestamps
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'kyc_profiles'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"KYC - {self.user.username} ({self.get_status_display()})"
+    
+    def save(self, *args, **kwargs):
+        """Update user's kyc_status when KYC profile status changes"""
+        super().save(*args, **kwargs)
+        if self.user.kyc_status != self.status:
+            self.user.kyc_status = self.status
+            self.user.save(update_fields=['kyc_status'])
+
+
+class KYCDocument(models.Model):
+    """KYC Document Model for storing KYC-related documents"""
+    DOCUMENT_TYPES = (
+        ('citizenship_front', 'Citizenship Certificate (Front)'),
+        ('citizenship_back', 'Citizenship Certificate (Back)'),
+        ('license', 'Driving License'),
+        ('pan', 'PAN Card'),
+        ('passport', 'Passport'),
+        ('photo', 'Passport Size Photo'),
+        ('signature', 'Signature'),
+    )
+    
+    STATUS_CHOICES = (
+        ('pending', 'Pending Verification'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    )
+    
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kyc_profile = models.ForeignKey(KYCProfile, on_delete=models.CASCADE, related_name='documents')
+    document_type = models.CharField(max_length=30, choices=DOCUMENT_TYPES)
+    file = models.FileField(upload_to='kyc_documents/%Y/%m/')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    verification_notes = models.TextField(blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        db_table = 'kyc_documents'
+        ordering = ['-uploaded_at']
+        unique_together = ['kyc_profile', 'document_type']
+    
+    def __str__(self):
+        return f"{self.get_document_type_display()} - {self.kyc_profile.user.username}"

@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import (
     User, Vehicle, LoanApplication, Document, 
-    EMISchedule, Payment, Notification, ChatMessage
+    EMISchedule, Payment, Notification, ChatMessage,
+    KYCProfile, KYCDocument
 )
 
 class UserSerializer(serializers.ModelSerializer):
@@ -10,7 +11,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'password', 'first_name', 'last_name', 
-                  'user_type', 'phone', 'address', 'citizenship_number', 
+                  'user_type', 'kyc_status', 'phone', 'address', 'citizenship_number', 
                   'date_of_birth', 'profile_picture', 'created_at']
         extra_kwargs = {
             'password': {'write_only': True},
@@ -23,13 +24,13 @@ class UserSerializer(serializers.ModelSerializer):
     def validate_email(self, value):
         """Check if email already exists"""
         if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("This email is already registered.")
+            raise serializers.ValidationError("This email address is already registered in our system.")
         return value
     
     def validate_username(self, value):
         """Check if username already exists"""
         if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("This username is already taken.")
+            raise serializers.ValidationError("This username is already taken. Please choose another one.")
         return value
     
     def create(self, validated_data):
@@ -77,6 +78,7 @@ class PaymentSerializer(serializers.ModelSerializer):
 
 class LoanApplicationSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.get_full_name', read_only=True)
+    customer_kyc_status = serializers.CharField(source='customer.kyc_status', read_only=True)
     vehicle_name = serializers.CharField(source='vehicle.__str__', read_only=True)
     documents = DocumentSerializer(many=True, read_only=True)
     emi_schedules = EMIScheduleSerializer(many=True, read_only=True)
@@ -105,13 +107,13 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
              monthly_income = self.instance.monthly_income
 
         if loan_amount is not None and loan_amount <= 0:
-            raise serializers.ValidationError({"loan_amount": "Loan amount must be positive."})
+            raise serializers.ValidationError({"loan_amount": "Loan amount must be a positive number greater than zero."})
         
         if down_payment is not None and down_payment < 0:
-            raise serializers.ValidationError({"down_payment": "Down payment cannot be negative."})
+            raise serializers.ValidationError({"down_payment": "Down payment cannot be a negative value."})
 
         if monthly_income is not None and monthly_income <= 0:
-            raise serializers.ValidationError({"monthly_income": "Monthly income must be positive."})
+            raise serializers.ValidationError({"monthly_income": "Please provide a valid monthly income greater than zero."})
 
         if vehicle and loan_amount is not None:
             max_loan = (vehicle.price * vehicle.max_loan_percentage) / 100
@@ -136,7 +138,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
     class Meta:
         model = LoanApplication
         fields = '__all__'
-        read_only_fields = ['customer', 'application_number', 'credit_score', 'fraud_risk_level', 
+        read_only_fields = ['customer', 'application_number', 'interest_rate', 'credit_score', 'fraud_risk_level', 
                            'ai_recommendation', 'verified_by', 'approved_by']
 
 
@@ -146,7 +148,69 @@ class NotificationSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+
 class ChatMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChatMessage
         fields = '__all__'
+
+
+class KYCDocumentSerializer(serializers.ModelSerializer):
+    verified_by_name = serializers.CharField(source='verified_by.get_full_name', read_only=True)
+    
+    class Meta:
+        model = KYCDocument
+        fields = '__all__'
+        read_only_fields = ['verified_by', 'verified_at']
+
+
+class KYCProfileSerializer(serializers.ModelSerializer):
+    documents = KYCDocumentSerializer(many=True, read_only=True)
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    verified_by_name = serializers.CharField(source='verified_by.get_full_name', read_only=True)
+    
+    class Meta:
+        model = KYCProfile
+        fields = '__all__'
+        read_only_fields = ['user', 'status', 'verified_by', 'verified_at', 'submitted_at']
+    
+    def validate_citizenship_number(self, value):
+        """Check if citizenship number already exists for another user"""
+        user = self.context['request'].user
+        if KYCProfile.objects.filter(citizenship_number=value).exclude(user=user).exists():
+            raise serializers.ValidationError("This citizenship number is already registered.")
+        return value
+    
+    def validate_pan_number(self, value):
+        """Check if PAN number already exists for another user"""
+        if value and value.strip():
+            user = self.context['request'].user
+            if KYCProfile.objects.filter(pan_number=value).exclude(user=user).exists():
+                raise serializers.ValidationError("This PAN number is already registered.")
+            return value
+        return None  # Convert empty string to None
+    
+    def validate_license_number(self, value):
+        if value == '': return None
+        return value
+        
+    def validate_passport_number(self, value):
+        if value == '': return None
+        return value
+
+    def validate(self, data):
+        """Additional validation for KYC data"""
+        # Ensure date of birth is in the past
+        from datetime import date
+        if data.get('date_of_birth') and data['date_of_birth'] >= date.today():
+            raise serializers.ValidationError({"date_of_birth": "Date of birth must be in the past."})
+        
+        # Ensure citizenship issue date is in the past
+        if data.get('citizenship_issue_date') and data['citizenship_issue_date'] >= date.today():
+            raise serializers.ValidationError({"citizenship_issue_date": "Citizenship issue date must be in the past."})
+        
+        # Clean up numeric fields
+        if 'annual_income' in data and data['annual_income'] == '':
+            data['annual_income'] = None
+            
+        return data

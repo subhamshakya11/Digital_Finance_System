@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaUser, FaLock, FaBell, FaCheckCircle, FaArrowLeft } from 'react-icons/fa';
+import toast from 'react-hot-toast';
 import authService from '../../services/auth';
+import getErrorMessage from '../../utils/errorHelper';
 
 const Settings = ({ onUserUpdate }) => {
   const navigate = useNavigate();
@@ -50,12 +52,10 @@ const Settings = ({ onUserUpdate }) => {
       // Trigger Navbar update
       if (onUserUpdate) onUserUpdate(updatedUser);
 
-      setMessage('Settings updated successfully!');
-      setTimeout(() => setMessage(''), 3000);
+      toast.success('Settings updated successfully!');
     } catch (error) {
       console.error('Error updating settings:', error);
-      setMessage('Failed to update settings.');
-      setTimeout(() => setMessage(''), 3000);
+      toast.error(getErrorMessage(error));
     }
   };
 
